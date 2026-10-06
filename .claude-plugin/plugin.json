@@ -1,0 +1,7 @@
+{
+  "name": "token-monitor",
+  "version": "0.1.0",
+  "description": "A live readout of the context window above the prompt, plus a pinned status line with the session cost, last turn's cost, tokens and cache hit rate.",
+  "author": { "name": "Lupi" },
+  "types": "./types/index.d.ts"
+}

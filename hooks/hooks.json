@@ -1,0 +1,4 @@
+{
+  "description": "Context-window readout above the prompt, and a pinned session/turn cost line below it.",
+  "modules": ["./register.tsx"]
+}

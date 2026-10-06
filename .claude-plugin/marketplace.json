@@ -1,0 +1,5 @@
+{
+  "name": "token-monitor",
+  "owner": { "name": "Lupi" },
+  "plugins": [{ "name": "token-monitor", "source": "." }]
+}
