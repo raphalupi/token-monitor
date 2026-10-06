@@ -27,6 +27,10 @@ $0.0842 session · last turn $0.0031 · 4.2k in / 890 out · cache 92%
 
 Reads `$.session.usage()` on `session.start` and `turn.complete`, keeps a short rolling history of context readings and a cost baseline in plugin state, and renders both into the `AbovePrompt` UI slot.
 
+## Credits
+
+Inspired by [Getting Started with Claude Code Mods](https://claude.dev/blog/getting-started-with-claude-code-mods/), which is also a good guide if you want to build your own.
+
 ## License
 
 MIT
