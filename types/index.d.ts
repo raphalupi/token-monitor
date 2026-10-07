@@ -17,11 +17,21 @@ export type CostState = {
   lastTurn: LastTurn | null
 }
 
+export type Settings = {
+  context: boolean
+  trend: boolean
+  session: boolean
+  lastTurn: boolean
+  inOut: boolean
+  cache: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'token-monitor': {
       readings: Reading[]
       cost: CostState
+      settings: Settings
     }
   }
 }

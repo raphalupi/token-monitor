@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { fmtTokens, fmtUsd, hitOf } from './format'
 import { statusText } from './register'
+import { DEFAULTS, normalize } from './settings'
 import type { CostState } from '../types'
 
 test('fmtUsd keeps extra decimals under a dollar so a cheap turn is not $0.00', async () => {
@@ -56,4 +57,12 @@ test('statusText adds the cache hit rate once a turn served from cache', async (
     lastTurn: { model: 'm', inTok: 100, outTok: 50, cacheRead: 9900, cacheWrite: 0, usd: 0.01 },
   }
   expect(statusText(state)).toBe('$1.10 session · last turn $0.0100 · 10k in / 50 out · cache 99%')
+})
+
+test('normalize defaults every row on and ignores junk from the store', async () => {
+  expect(normalize(undefined)).toEqual(DEFAULTS)
+  expect(normalize({ session: false, cache: 'no', bogus: false })).toEqual({
+    ...DEFAULTS,
+    session: false,
+  })
 })

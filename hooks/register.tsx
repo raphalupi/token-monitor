@@ -4,7 +4,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, TurnCompleteInput } from 'claude-code'
 
 import { fmtTokens, fmtUsd, hitOf, short } from './format'
-import type { CostState, Reading } from '../types'
+import { DEFAULTS, ROWS, STORE_KEY, normalize } from './settings'
+import type { CostState, Reading, Settings } from '../types'
 
 // Band above the prompt: a context-window readout, originally based on
 // Arunjay's Token Weather, plus token-ledger's cost summary folded into the
@@ -13,6 +14,7 @@ import type { CostState, Reading } from '../types'
 // finished turn). Both kept in $.state (not module variables) so a hot
 // reload mid-session does not lose the reading history or the cost baseline.
 
+const PANE = 'token-monitor'
 const HISTORY = 12
 const BARS = '▁▂▃▄▅▆▇█'
 const LEVELS = [
@@ -29,6 +31,8 @@ const cost = atom({ plugin: 'token-monitor', key: 'cost' } as const, {
   lastTotal: null,
   lastTurn: null,
 } as CostState)
+
+const settings = atom({ plugin: 'token-monitor', key: 'settings' } as const, DEFAULTS as Settings)
 
 async function takeReading($: EngineInterface): Promise<void> {
   const { context } = await $.session.usage()
@@ -105,12 +109,48 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
 
+    await $.command.register({
+      name: 'token-monitor',
+      description: 'Choose which rows the token monitor shows',
+    })
+    const stored = normalize(await $.store.get(STORE_KEY))
+    await update($, settings, () => stored)
+
     await takeReading($)
 
     const total = await costOf($)
     await update($, cost, current => ({ ...current, sessionUsd: total, lastTotal: total }))
 
     return result
+  })
+
+  on('command.run', { command: 'token-monitor' }, async $ => {
+    await $.ui.open({ id: PANE, title: 'Token monitor' })
+
+    return { text: 'Token monitor settings opened.' }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const s = await read($, settings)
+
+    const flip = async (key: keyof Settings) => {
+      const next = await update($, settings, current => ({ ...current, [key]: !current[key] }))
+      await $.store.set(STORE_KEY, next)
+    }
+
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>Press a row to show or hide it. The band above the prompt updates at once.</Text>
+        {ROWS.map(row => (
+          <Button
+            key={row.key}
+            label={`${s[row.key] ? '[x]' : '[ ]'} ${row.label}`}
+            onPress={() => flip(row.key)}
+          />
+        ))}
+      </Box>
+    )
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -132,61 +172,78 @@ export const register: Register = on => {
     }
 
     const c = await read($, cost)
+    const s = await read($, settings)
     const { Box, Text } = $.ui.resolve(e)
-    return band(Box, Text, history, e.props.bodyColumns, c) as RenderElement
+    return (band(Box, Text, history, e.props.bodyColumns, c, s) ?? next(e)) as RenderElement
   })
 }
 
-function band($Box: any, $Text: any, history: Reading[], columns: number, c: CostState) {
+function band($Box: any, $Text: any, history: Reading[], columns: number, c: CostState, s: Settings) {
   const now = history[history.length - 1]
   const f = LEVELS.find(b => now.percent < b.upTo) ?? LEVELS[LEVELS.length - 1]
   const Box = $Box
   const Text = $Text
   const last = c.lastTurn
-  const hasSession = c.sessionUsd !== null
-  const hasLastUsd = !!last && last.usd !== null
-  const hasInOut = !!last
+  const showTrend = s.trend && columns >= 60 && history.length > 1
   const readOver = last ? last.inTok + last.cacheRead + last.cacheWrite : 0
   const hit = last ? hitOf(last.inTok, last.cacheRead, last.cacheWrite) : null
 
+  const parts: any[] = []
+  if (s.session && c.sessionUsd !== null) {
+    parts.push(
+      <Text>
+        <Text color="green">{fmtUsd(c.sessionUsd)}</Text> session
+      </Text>,
+    )
+  }
+  if (s.lastTurn && last && last.usd !== null) {
+    parts.push(
+      <Text>
+        last turn <Text color="green">{fmtUsd(last.usd)}</Text>
+      </Text>,
+    )
+  }
+  if (s.inOut && last) {
+    parts.push(
+      <Text>
+        {fmtTokens(readOver)} in / {fmtTokens(last.outTok)} out
+      </Text>,
+    )
+  }
+  if (s.cache && hit !== null) parts.push(<Text>cache {hit}%</Text>)
+
+  const top = s.context || showTrend
+  if (!top && parts.length === 0) return null
+
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box flexDirection="row">
-        <Text color={f.color} bold>
-          {f.icon}  {f.word}
-        </Text>
-        <Text>  {now.percent}% of context</Text>
-        <Text dimColor>
-          {'  '}
-          {short(now.tokens)} / {short(now.window)}
-        </Text>
-        {columns >= 60 && history.length > 1 ? (
-          <Text dimColor>   last turns </Text>
-        ) : null}
-        {columns >= 60 && history.length > 1 ? (
-          <Text color={f.color}>{sparkline(history)}</Text>
-        ) : null}
-        {columns >= 60 && history.length > 1 ? <Text dimColor>{trend(history)}</Text> : null}
-      </Box>
-      {hasSession || last ? (
+      {top ? (
         <Box flexDirection="row">
-          {hasSession ? (
-            <Text>
-              <Text color="green">{fmtUsd(c.sessionUsd)}</Text> session
+          {s.context ? (
+            <Text color={f.color} bold>
+              {f.icon}  {f.word}
             </Text>
           ) : null}
-          {hasLastUsd ? (
-            <Text>
-              {hasSession ? ' · ' : ''}last turn <Text color="green">{fmtUsd(last!.usd)}</Text>
+          {s.context ? <Text>  {now.percent}% of context</Text> : null}
+          {s.context ? (
+            <Text dimColor>
+              {'  '}
+              {short(now.tokens)} / {short(now.window)}
             </Text>
           ) : null}
-          {hasInOut ? (
-            <Text>
-              {hasSession || hasLastUsd ? ' · ' : ''}
-              {fmtTokens(readOver)} in / {fmtTokens(last!.outTok)} out
+          {showTrend ? <Text dimColor>{s.context ? '   ' : ''}last turns </Text> : null}
+          {showTrend ? <Text color={f.color}>{sparkline(history)}</Text> : null}
+          {showTrend ? <Text dimColor>{trend(history)}</Text> : null}
+        </Box>
+      ) : null}
+      {parts.length > 0 ? (
+        <Box flexDirection="row">
+          {parts.map((part, n) => (
+            <Text key={n}>
+              {n > 0 ? ' · ' : ''}
+              {part}
             </Text>
-          ) : null}
-          {hit !== null ? <Text> · cache {hit}%</Text> : null}
+          ))}
         </Box>
       ) : null}
     </Box>
